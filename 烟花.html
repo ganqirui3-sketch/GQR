@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>福满星河 · 成语花火</title>
+  <style>
+    /* 完全保留原粒子烟花的样式，仅增加文字特效 */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: crosshair;
+    }
+    .panel {
+      position: fixed;
+      bottom: 20px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 12px;
+      z-index: 30;
+      pointer-events: none;
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+    }
+    .fireworks-tip {
+      color: rgba(255, 245, 200, 0.9);
+      font-size: 15px;
+      letter-spacing: 2px;
+      text-shadow: 0 0 8px #ff9f4b;
+      backdrop-filter: blur(2px);
+      padding: 8px 22px;
+      border-radius: 50px;
+      background: rgba(8, 5, 20, 0.5);
+      border: 1px solid rgba(255, 200, 120, 0.4);
+      pointer-events: none;
+    }
+    .music-control {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(12, 8, 25, 0.7);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 190, 100, 0.5);
+      border-radius: 60px;
+      padding: 8px 22px;
+      color: #ffe3b5;
+      font-size: 15px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.7);
+      transition: 0.2s;
+      cursor: pointer;
+      user-select: none;
+    }
+    .music-control:hover {
+      background: rgba(30, 18, 45, 0.85);
+      border-color: #ffb974;
+      color: #fff3d6;
+    }
+    .music-icon {
+      font-size: 22px;
+      line-height: 1;
+    }
+    input.volume-slider {
+      width: 72px;
+      height: 4px;
+      -webkit-appearance: none;
+      background: rgba(255, 200, 120, 0.3);
+      border-radius: 4px;
+      outline: none;
+    }
+    input.volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #ffc085;
+      border-radius: 50%;
+      border: 1px solid #fffae5;
+      box-shadow: 0 0 12px #ffa84d;
+      cursor: pointer;
+      transition: 0.08s;
+    }
+    input.volume-slider::-webkit-slider-thumb:hover {
+      background: #ffdb9f;
+      transform: scale(1.2);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="fireworksCanvas"></canvas>
+
+  <div class="panel">
+    <div class="fireworks-tip">
+      ✦ 指尖轻点 · 福字成列 ✦
+    </div>
+    <div id="musicControl" class="music-control">
+      <span class="music-icon">🎵</span>
+      <span id="musicStatus">乐起星河</span>
+      <input type="range" id="volumeSlider" class="volume-slider" min="0" max="1" step="0.01" value="0.45">
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      "use strict";
+
+      // ---------- 画布 ----------
+      const canvas = document.getElementById('fireworksCanvas');
+      let ctx = canvas.getContext('2d');
+      let width = window.innerWidth;
+      let height = window.innerHeight;
+
+      // ---------- 原粒子烟花系统（完全保留）----------
+      let particles = [];
+      let stars = [];
+
+      // 物理参数
+      const GRAVITY = 0.1;
+      const FRICTION = 0.98;
+      const MAX_PARTICLES = 1500;
+
+      // ---------- 新增：祝福文字系统 ----------
+      let blessingTexts = [];   // 存储屏幕上正在显示的祝福文字（每个字独立）
+      
+      // 祝福词库（您可自由增删）
+      const BLESSINGS = [
+        "岁岁平安","吉星高照","五福临门","四季安康","喜乐无忧",
+"万事顺遂","福暖四季","平安喜乐","阖家幸福","福寿安康",
+"顺风顺水","瑞气盈门","喜乐长安","万事亨通","吉祥如意",
+"前程似锦","宏图大展","才思泉涌","下笔有神","逢考必过",
+"金榜题名","学业有成","步步高升","功不唐捐","厚积薄发",
+"乘风破浪","游刃有余","技进乎道","研精毕智","独占鳌头",
+"财源广进","富贵安康","春风得意","花好月圆","岁岁有余",
+"丰衣足食","陶然自乐","紫气东来","安居乐业","招财进宝",
+"马到成功","一马当先","龙马精神","策马奔腾","骏业日新",
+"飞黄腾达","倚马千言","鲜衣怒马","天马行空","万马奔腾"
+      ];
+
+      // ---------- 星空生成 ----------
+      function generateStars(count = 250) {
+        stars = [];
+        for (let i = 0; i < count; i++) {
+          stars.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            radius: Math.random() * 2.0 + 1.0,
+            brightness: Math.random() * 0.7 + 0.5,
+            twinkle: Math.random() * 0.2 + 0.9,
+          });
+        }
+      }
+
+      // ---------- 原烟花爆炸（点击和自动都会调用）----------
+      function createExplosion(centerX, centerY, customCount) {
+        let baseCount = Math.floor(Math.random() * 50) + 80;
+        if (particles.length > MAX_PARTICLES * 0.7) {
+          baseCount = Math.floor(baseCount * 0.6);
+        }
+        const particleCount = customCount || baseCount;
+        const baseHue = Math.random() * 360;
+        
+        for (let i = 0; i < particleCount; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 6.5 + 2.8;
+          let vx = Math.cos(angle) * speed * (Math.random() * 0.7 + 0.7);
+          let vy = Math.sin(angle) * speed * (Math.random() * 0.7 + 0.7);
+          if (Math.random() > 0.8) {
+            vx *= 1.6;
+            vy *= 1.6;
+          }
+          const hue = (baseHue + (Math.random() * 40 - 20) + 360) % 360;
+          const saturation = 85 + Math.random() * 15;
+          const lightness = 60 + Math.random() * 25;
+          const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+          const size = Math.random() * 2.0 + 1.5;
+          const alpha = Math.random() * 0.4 + 0.65;
+          const decay = Math.random() * 0.009 + 0.006;
+
+          particles.push({
+            x: centerX, y: centerY,
+            vx, vy,
+            size, color,
+            alpha: alpha > 1 ? 1 : alpha,
+            decay
+          });
+        }
+      }
+
+      // ---------- ★ 新增：生成排成一列、倾斜的四字祝福语 ★ ----------
+      function createBlessingLine(centerX, centerY) {
+        // 随机选一个祝福成语
+        const blessing = BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)];
+        const chars = blessing.split('');  // 四个汉字
+        
+        // 倾斜角度（-30度～30度之间随机，弧度）
+        const tiltAngle = (Math.random() * 60 - 30) * Math.PI / 180;
+        
+        // 字与字之间的间距（像素），根据屏幕宽度自适应
+        const charSpacing = Math.min(width, height) * 0.1;
+        
+        // 整体初速度（向外飘散的速度）
+        const speedX = (Math.random() - 0.5) * 1.2;
+        const speedY = (Math.random() - 0.8) * 1.2 - 0.5; // 略向上
+        
+        // 每个字的颜色：采用喜庆的金色/红色/橙色系
+        const baseHue = Math.random() * 60 + 30; // 30～90 橙黄红
+        
+        chars.forEach((char, index) => {
+          // 计算该字相对于中心的位置：沿倾斜方向排列
+          // 让四个字均匀分布在一条直线上，中心点位于第二个和第三个字之间
+          const offsetIndex = index - 1.5; // -1.5, -0.5, 0.5, 1.5
+          const offsetX = Math.cos(tiltAngle) * offsetIndex * charSpacing;
+          const offsetY = Math.sin(tiltAngle) * offsetIndex * charSpacing;
+          
+          // 每个字可以有小幅度随机偏移，看起来更自然
+          const randOffsetX = (Math.random() - 0.5) * 4;
+          const randOffsetY = (Math.random() - 0.5) * 4;
+          
+          // 颜色：同一组成语使用相近色，每个字微调
+          const hue = baseHue + (Math.random() * 20 - 10);
+          const sat = 85 + Math.random() * 15;
+          const light = 55 + Math.random() * 30;
+          const color = `hsl(${hue}, ${sat}%, ${light}%)`;
+          
+          // 文字大小：也随屏幕缩放
+          const fontSize = Math.min(width, height) * 0.06 + 8; // 28～40px
+          
+          blessingTexts.push({
+            char: char,
+            x: centerX + offsetX + randOffsetX,
+            y: centerY + offsetY + randOffsetY,
+            vx: speedX + (Math.random() - 0.5) * 0.5,
+            vy: speedY + (Math.random() - 0.5) * 0.5,
+            size: fontSize,
+            color: color,
+            alpha: 0.95,          // 初始较亮
+            decay: 0.005 + Math.random() * 0.004, // 逐渐淡出
+            rotation: tiltAngle + (Math.random() - 0.5) * 0.1, // 整体倾斜加微小扰动
+            rotSpeed: (Math.random() - 0.5) * 0.01
+          });
+        });
+      }
+
+      // ---------- 自适应 ----------
+      function resizeCanvas() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        generateStars(260);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      // ---------- 更新粒子（烟花粒子+祝福文字）----------
+      function updateParticles() {
+        // 1. 更新普通烟花粒子
+        for (let p of particles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += GRAVITY;
+          p.vx *= FRICTION;
+          p.vy *= FRICTION;
+          p.alpha -= p.decay;
+        }
+        particles = particles.filter(p => 
+          p.alpha > 0.08 && 
+          p.x > -width * 0.3 && p.x < width * 1.3 &&
+          p.y > -height * 0.3 && p.y < height * 1.3
+        );
+        if (particles.length > MAX_PARTICLES) {
+          particles = particles.slice(-MAX_PARTICLES);
+        }
+
+        // 2. 更新祝福文字
+        for (let t of blessingTexts) {
+          t.x += t.vx;
+          t.y += t.vy;
+          // 文字轻微物理（重力很弱）
+          t.vy += GRAVITY * 0.3;
+          t.vx *= FRICTION;
+          t.vy *= FRICTION;
+          t.alpha -= t.decay;
+          if (t.rotSpeed) t.rotation += t.rotSpeed;
+        }
+        blessingTexts = blessingTexts.filter(t => 
+          t.alpha > 0.1 && 
+          t.x > -width * 0.2 && t.x < width * 1.2 &&
+          t.y > -height * 0.2 && t.y < height * 1.2
+        );
+      }
+
+      // ---------- 绘制（原烟花粒子 + 祝福文字）----------
+      function draw() {
+        // 拖尾
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+        ctx.fillRect(0, 0, width, height);
+
+        // 星星
+        for (let s of stars) {
+          const twinkle = 0.9 + Math.sin(Date.now() * 0.002 + s.x * 0.01) * 0.15;
+          const alpha = Math.min(s.brightness * twinkle, 0.95);
+          ctx.fillStyle = `rgba(255, 250, 235, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // ---- 绘制原烟花粒子（带光晕）----
+        ctx.shadowColor = 'rgba(255, 200, 150, 0.5)';
+        ctx.shadowBlur = 3.5;
+        for (let p of particles) {
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          // 高光
+          ctx.globalAlpha = p.alpha * 0.3;
+          ctx.fillStyle = '#fffbe6';
+          ctx.beginPath();
+          ctx.arc(p.x - 0.5, p.y - 0.5, p.size * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // ---- 绘制祝福文字（独立光晕，更亮）----
+        ctx.shadowColor = 'rgba(255, 220, 100, 0.8)';
+        ctx.shadowBlur = 10;
+        ctx.font = `bold ${Math.min(width, height) * 0.06 + 8}px "Microsoft Yahei", "PingFang SC", "Noto Sans CJK", "Segoe UI", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        for (let t of blessingTexts) {
+          ctx.globalAlpha = t.alpha;
+          ctx.fillStyle = t.color;
+          ctx.save();
+          ctx.translate(t.x, t.y);
+          ctx.rotate(t.rotation);
+          ctx.font = `bold ${t.size}px "Microsoft Yahei", "PingFang SC", "Noto Sans CJK", "Segoe UI", sans-serif`;
+          ctx.fillText(t.char, 0, 0);
+          ctx.restore();
+        }
+
+        // 重置
+        ctx.globalAlpha = 1.0;
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+      }
+
+      // ---------- 动画循环 ----------
+      function animate() {
+        updateParticles();
+
+        // 自动烟花（与原代码一致）
+        if (particles.length < MAX_PARTICLES * 0.8 && Math.random() < 0.032) {
+          const randX = Math.random() * (width * 0.8) + width * 0.1;
+          const randY = Math.random() * (height * 0.5) + height * 0.1;
+          createExplosion(randX, randY, 100 + Math.floor(Math.random() * 40));
+        }
+        if (particles.length < MAX_PARTICLES * 0.7 && Math.random() < 0.015) {
+          const rareX = Math.random() * (width * 0.7) + width * 0.2;
+          const rareY = Math.random() * (height * 0.4) + height * 0.1;
+          createExplosion(rareX, rareY, 120);
+        }
+
+        draw();
+        requestAnimationFrame(animate);
+      }
+
+      // ---------- 音乐系统（使用您验证有效的年夜饭）----------
+      const MUSIC_URL = 'https://cdn.jsdelivr.net/gh/ganqirui3-sketch/happynewyear@main/nianyefan.mp3';
+      
+      const audio = new Audio();
+      audio.src = MUSIC_URL;
+      audio.loop = true;
+      audio.preload = 'auto';
+      audio.volume = 0.45;
+      audio.muted = true;
+      audio.load();
+
+      let userActivated = false;
+
+      function enableAudio() {
+        if (userActivated) return;
+        userActivated = true;
+        audio.muted = false;
+        audio.play()
+          .then(() => document.getElementById('musicStatus').innerText = '音浪流淌')
+          .catch(() => {
+            audio.play();
+            document.getElementById('musicStatus').innerText = '待点击唤醒';
+          });
+      }
+
+      // ---------- 交互：点击触发（原烟花粒子 + 祝福文字）----------
+      function handleCanvasInteraction(e) {
+        let clientX, clientY;
+        if (e.touches) {
+          e.preventDefault();
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        } else {
+          clientX = e.clientX;
+          clientY = e.clientY;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const canvasX = (clientX - rect.left) * scaleX;
+        const canvasY = (clientY - rect.top) * scaleY;
+        const safeX = Math.min(Math.max(canvasX, 20), width - 20);
+        const safeY = Math.min(Math.max(canvasY, 20), height - 20);
+
+        // 1. 生成原粒子烟花（完全保留）
+        createExplosion(safeX, safeY, 130 + Math.floor(Math.random() * 50));
+        
+        // 2. 生成祝福文字——排成一列、倾斜的四字成语
+        createBlessingLine(safeX, safeY);
+        
+        // 3. 唤醒音乐
+        enableAudio();
+      }
+
+      // ---------- 音量控制、音乐按钮 ----------
+      function initVolumeControl() {
+        const slider = document.getElementById('volumeSlider');
+        slider.addEventListener('input', function() {
+          audio.volume = parseFloat(this.value);
+          if (audio.muted && audio.volume > 0) {
+            audio.muted = false;
+            audio.play().catch(() => {});
+          }
+        });
+      }
+
+      function initMusicControl() {
+        const control = document.getElementById('musicControl');
+        const statusEl = document.getElementById('musicStatus');
+        control.addEventListener('click', function(e) {
+          if (e.target.classList.contains('volume-slider')) return;
+          if (audio.muted) {
+            audio.muted = false;
+            audio.play()
+              .then(() => statusEl.innerText = '音浪流淌')
+              .catch(() => {});
+          } else {
+            audio.muted = true;
+            statusEl.innerText = '静音';
+          }
+        });
+      }
+
+      // ---------- 初始化 ----------
+      function init() {
+        resizeCanvas();
+
+        // 开场四朵普通烟花 + 四组祝福文字
+        setTimeout(() => {
+          if (width > 200 && height > 200) {
+            createExplosion(width * 0.3, height * 0.25, 120);
+            createBlessingLine(width * 0.3, height * 0.25);
+            
+            createExplosion(width * 0.7, height * 0.35, 120);
+            createBlessingLine(width * 0.7, height * 0.35);
+            
+            createExplosion(width * 0.5, height * 0.2, 140);
+            createBlessingLine(width * 0.5, height * 0.2);
+            
+            createExplosion(width * 0.2, height * 0.4, 110);
+            createBlessingLine(width * 0.2, height * 0.4);
+          }
+        }, 100);
+
+        canvas.addEventListener('click', handleCanvasInteraction);
+        canvas.addEventListener('touchstart', handleCanvasInteraction, { passive: false });
+        window.addEventListener('resize', resizeCanvas);
+
+        initVolumeControl();
+        initMusicControl();
+
+        audio.play().catch(() => {
+          audio.muted = true;
+          audio.play().catch(() => {});
+        });
+
+        animate();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
